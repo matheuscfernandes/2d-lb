@@ -1,14 +1,4 @@
-#cython: profile=True
-#cython: linetrace=True
-#cython: boundscheck=True
-#cython: initializedcheck=False
-#cython: nonecheck=False
-#cython: wraparound=False
-#cython: cdivision=True
-
-from libc.stdio cimport printf
 import numpy as np
-cimport numpy as np
 
 ##########################
 ##### D2Q9 parameters ####
@@ -91,8 +81,8 @@ class Pipe_Flow(object):
         for i in range(self.rho.shape[0]):
             self.rho[i, :] = self.inlet_rho - i*(self.inlet_rho - self.outlet_rho)/float(self.rho.shape[0])
 
-        self.u = .0*np.random.randn(nx, ny) # Fluctuations in the fluid
-        self.v = .0*np.random.randn(nx, ny) # Fluctuations in the fluid
+        self.u = .01*np.random.randn(nx, ny) # Fluctuations in the fluid
+        self.v = .01*np.random.randn(nx, ny) # Fluctuations in the fluid
 
 
     def update_feq(self):
@@ -151,9 +141,8 @@ class Pipe_Flow(object):
     def move_bcs(self):
         """This is slow; cythonizing makes it fast."""
 
-        cdef int lx = self.lx
-        cdef int ly = self.ly
-        cdef int i, j
+        lx = self.lx
+        ly = self.ly
 
         farr = self.f
 
@@ -167,76 +156,70 @@ class Pipe_Flow(object):
         farr[6, lx, 1:ly] = -.5*farr[2,lx,1:ly]+.5*farr[4,lx,1:ly]+farr[8,lx,1:ly]-(1./6.)*self.u[lx,1:ly]*self.outlet_rho
         farr[7, lx, 1:ly] = .5*farr[2,lx,1:ly]-.5*farr[4,lx,1:ly]+farr[5,lx,1:ly]-(1./6.)*self.u[lx,1:ly]*self.outlet_rho
 
-        cdef float[:, :, :] f = self.f
-        cdef float inlet_rho = self.inlet_rho
-        cdef float outlet_rho = self.outlet_rho
+        f = self.f
+        inlet_rho = self.inlet_rho
+        outlet_rho = self.outlet_rho
 
-        with nogil:
-            # NORTH solid
-            for i in range(1, lx): # Bounce back
-                f[4,i,ly] = f[2,i,ly]
-                f[8,i,ly] = f[6,i,ly]
-                f[7,i,ly] = f[5,i,ly]
-            # SOUTH solid
-            for i in range(1, lx):
-                f[2,i,0] = f[4,i,0]
-                f[6,i,0] = f[8,i,0]
-                f[5,i,0] = f[7,i,0]
+        # NORTH solid
+        f[4,1:lx,ly] = f[2,1:lx,ly]
+        f[8,1:lx,ly] = f[6,1:lx,ly]
+        f[7,1:lx,ly] = f[5,1:lx,ly]
+        # SOUTH solid
+        f[2,1:lx,0] = f[4,1:lx,0]
+        f[6,1:lx,0] = f[8,1:lx,0]
+        f[5,1:lx,0] = f[7,1:lx,0]
 
-            ### Corner nodes: Tricky & a huge pain ###
-            # BOTTOM INLET
-            f[1, 0, 0] = f[3, 0, 0]
-            f[2, 0, 0] = f[4, 0, 0]
-            f[5, 0, 0] = f[7, 0, 0]
-            f[6, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
-            f[8, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
+        ### Corner nodes: Tricky & a huge pain ###
+        # BOTTOM INLET
+        f[1, 0, 0] = f[3, 0, 0]
+        f[2, 0, 0] = f[4, 0, 0]
+        f[5, 0, 0] = f[7, 0, 0]
+        f[6, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
+        f[8, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
 
-            # TOP INLET
-            f[1, 0, ly] = f[3, 0, ly]
-            f[4, 0, ly] = f[2, 0, ly]
-            f[5, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
-            f[7, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
-            f[8, 0, ly] = f[6, 0, ly]
+        # TOP INLET
+        f[1, 0, ly] = f[3, 0, ly]
+        f[4, 0, ly] = f[2, 0, ly]
+        f[8, 0, ly] = f[6, 0, ly]
+        f[5, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
+        f[7, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
 
-            # BOTTOM OUTLET
-            f[3, lx, 0] = f[1, lx, 0]
-            f[2, lx, 0] = f[4, lx, 0]
-            f[6, lx, 0] = f[8, lx, 0]
-            f[5, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
-            f[7, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
+        # BOTTOM OUTLET
+        f[3, lx, 0] = f[1, lx, 0]
+        f[2, lx, 0] = f[4, lx, 0]
+        f[6, lx, 0] = f[8, lx, 0]
+        f[5, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
+        f[8, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
 
-            # TOP OUTLET
-            f[3, lx, ly] = f[1, lx, ly]
-            f[4, lx, ly] = f[2, lx, ly]
-            f[6, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,lx,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
-            f[7, lx, ly] = f[5, lx, ly]
-            f[8, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,lx,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
+        # TOP OUTLET
+        f[3, lx, ly] = f[1, lx, ly]
+        f[4, lx, ly] = f[2, lx, ly]
+        f[7, lx, ly] = f[5, lx, ly]
+        f[6, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,ly,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
+        f[8, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,ly,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
 
     def move(self):
-        cdef float[:, :, :] f = self.f
-        cdef int lx = self.lx
-        cdef int ly = self.ly
-
-        cdef int i, j
+        f = self.f
+        lx = self.lx
+        ly = self.ly
 
         # This can't be parallelized without making a copy...order of loops is super important!
-        with nogil:
-            for j in range(ly,0,-1): # Up, up-left
-                for i in range(0, lx):
-                    f[2,i,j] = f[2,i,j-1]
-                    f[6,i,j] = f[6,i+1,j-1]
-            for j in range(ly,0,-1): # Right, up-right
-                for i in range(lx,0,-1):
-                    f[1,i,j] = f[1,i-1,j]
-                    f[5,i,j] = f[5,i-1,j-1]
-            for j in range(0,ly): # Down, right-down
-                for i in range(lx,0,-1):
-                    f[4,i,j] = f[4,i,j+1]
-                    f[8,i,j] = f[8,i-1,j+1]
-            for j in range(0,ly): # Left, left-down
-                for i in range(0, lx):
-                    f[3,i,j] = f[3,i+1,j]
-                    f[7,i,j] = f[7,i+1,j+1]
+        for j in range(ly,0,-1): # Up, up-left
+            for i in range(0, lx):
+                f[2,i,j] = f[2,i,j-1]
+                f[6,i,j] = f[6,i+1,j-1]
+        for j in range(ly,0,-1): # Right, up-right
+            for i in range(lx,0,-1):
+                f[1,i,j] = f[1,i-1,j]
+                f[5,i,j] = f[5,i-1,j-1]
+        for j in range(0,ly): # Down, right-down
+            for i in range(lx,0,-1):
+                f[4,i,j] = f[4,i,j+1]
+                f[8,i,j] = f[8,i-1,j+1]
+        for j in range(0,ly): # Left, left-down
+            for i in range(0, lx):
+                f[3,i,j] = f[3,i+1,j]
+                f[7,i,j] = f[7,i+1,j+1]
 
     def init_pop(self):
         feq = self.feq
@@ -245,7 +228,7 @@ class Pipe_Flow(object):
 
         self.f = feq.copy()
         # We now slightly perturb f
-        amplitude = .00
+        amplitude = .01
         perturb = (1. + amplitude*np.random.randn(nx, ny))
         self.f *= perturb
 
@@ -264,6 +247,74 @@ class Pipe_Flow(object):
             self.update_feq() # Update the equilibrium fields
             self.collide_particles() # Relax the nonequilibrium fields
 
+class Pipe_Flow_PeriodicBC(Pipe_Flow):
+
+    def __init__(self, **kwargs):
+        super(Pipe_Flow_PeriodicBC, self).__init__(**kwargs)
+
+    def move_bcs(self):
+        """This is slow; cythonizing makes it fast."""
+
+        lx = self.lx
+        ly = self.ly
+
+        farr = self.f
+
+        # INLET: constant pressure!
+        farr[1, 0, 1:ly] = farr[3, 0, 1:ly] + (2./3.)*self.inlet_rho*self.u[0, 1:ly]
+        farr[5, 0, 1:ly] = -.5*farr[2,0,1:ly]+.5*farr[4, 0, 1:ly]+farr[7, 0, 1:ly] + (1./6.)*self.u[0, 1:ly]*self.inlet_rho
+        farr[8, 0, 1:ly] = .5*farr[2,0,1:ly]-.5*farr[4, 0, 1:ly]+farr[6, 0, 1:ly] + (1./6.)*self.u[0, 1:ly]*self.inlet_rho
+
+        # OUTLET: constant pressure!
+        farr[3, lx, 1:ly] = farr[1, lx, 1:ly] - (2./3.)*self.outlet_rho*self.u[lx,1:ly]
+        farr[6, lx, 1:ly] = -.5*farr[2,lx,1:ly]+.5*farr[4,lx,1:ly]+farr[8,lx,1:ly]-(1./6.)*self.u[lx,1:ly]*self.outlet_rho
+        farr[7, lx, 1:ly] = .5*farr[2,lx,1:ly]-.5*farr[4,lx,1:ly]+farr[5,lx,1:ly]-(1./6.)*self.u[lx,1:ly]*self.outlet_rho
+
+        f = self.f
+        inlet_rho = self.inlet_rho
+        outlet_rho = self.outlet_rho
+
+        # NORTH solid
+        f[4,1:lx,ly] = f[2,1:lx,ly]
+        f[8,1:lx,ly] = f[6,1:lx,ly]
+        f[7,1:lx,ly] = f[5,1:lx,ly]
+        # SOUTH solid
+        f[2,1:lx,0] = f[4,1:lx,0]
+        f[6,1:lx,0] = f[8,1:lx,0]
+        f[5,1:lx,0] = f[7,1:lx,0]
+
+        #####THIS PART IS NOT CORRECT, IT NEEDS TO BE FULLY REDERIVED IF THIS PART IS DESIRED, MOVIGN ON TO IMPLMENTING VELOCITY WITH PERIODIC BC
+        ### Corner nodes: Tricky & a huge pain ###
+        # BOTTOM INLET
+        f[1, 0, 0] = f[3, 0, 0]
+        f[2, 0, 0] = f[4, 0, 0]
+        f[5, 0, 0] = f[7, 0, 0]
+        f[6, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
+        f[8, 0, 0] = .5*(-f[0,0,0]-2*f[3,0,0]-2*f[4,0,0]-2*f[7,0,0]+inlet_rho)
+
+        # TOP INLET
+        f[1, 0, ly] = f[3, 0, ly]
+        f[4, 0, ly] = f[2, 0, ly]
+        f[8, 0, ly] = f[6, 0, ly]
+        f[5, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
+        f[7, 0, ly] = .5*(-f[0,0,ly]-2*f[2,0,ly]-2*f[3,0,ly]-2*f[6,0,ly]+inlet_rho)
+
+        # BOTTOM OUTLET
+        f[3, lx, 0] = f[1, lx, 0]
+        f[2, lx, 0] = f[4, lx, 0]
+        f[6, lx, 0] = f[8, lx, 0]
+        f[5, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
+        f[8, lx, 0] = .5*(-f[0,lx,0]-2*f[1,lx,0]-2*f[4,lx,0]-2*f[8,lx,0]+outlet_rho)
+
+        # TOP OUTLET
+        f[3, lx, ly] = f[1, lx, ly]
+        f[4, lx, ly] = f[2, lx, ly]
+        f[7, lx, ly] = f[5, lx, ly]
+        f[6, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,ly,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
+        f[8, lx, ly] = .5*(-f[0,lx,ly]-2*f[1,ly,ly]-2*f[2,lx,ly]-2*f[5,lx,ly]+outlet_rho)
+   
+
+
 class Pipe_Flow_PeriodicBC_VelocityInlet(Pipe_Flow):
 
     def __init__(self, u_w=0.1, **kwargs):
@@ -276,47 +327,53 @@ class Pipe_Flow_PeriodicBC_VelocityInlet(Pipe_Flow):
     def move_bcs(self):
         """This is slow; cythonizing makes it fast."""
 
-        cdef int lx = self.lx
-        cdef int ly = self.ly
+        lx = self.lx
+        ly = self.ly
 
-        cdef int u_w = self.u_w
-        cdef int u_e = self.u_e
+        u_w = self.u_w
+        u_e = self.u_e
 
-        cdef float[:,:,:] farr = self.f
-        cdef float[:] rho_w = np.zeros((ly),dtype=np.float32)
-        cdef float[:] rho_e = np.zeros((ly),dtype=np.float32)
+        farr = self.f
 
-        cdef float[:,:,:] f = self.f
-        cdef int ii
+
+        # INLET: imposed velocity of u_w in the x direction and 0 in the y direction
+        rho_w = (1./(1.-u_w))*(farr[0,0,1:ly]+farr[2,0,1:ly]+farr[4,0,1:ly]+2.*(farr[3,0,1:ly]+farr[6,0,1:ly]+farr[7,0,1:ly]))
+
+
+        farr[1, 0, 1:ly] = farr[3,0,1:ly] + (2./3.)*rho_w*u_w
+        farr[5, 0, 1:ly] = farr[7,0,1:ly] - (1./2.)*(farr[2,0,1:ly]-farr[4,0,1:ly]) + (1./6.)*rho_w*u_w 
+        farr[8, 0, 1:ly] = farr[6,0,1:ly] + (1./2.)*(farr[2,0,1:ly]-farr[4,0,1:ly]) + (1./6.)*rho_w*u_w
+             
+        # OUTLET: imposed velocity of u_w in the x direction and 0 in the y direction
+        rho_e = (1./(1.+u_e))*(farr[0,lx,1:ly]+farr[2,lx,1:ly]+farr[4,lx,1:ly]+2.*(farr[1,lx,1:ly]+farr[5,lx,1:ly]+farr[8,lx,1:ly]))
+
+        farr[3, lx, 1:ly] = farr[1,lx,1:ly] - (2./3.)*rho_e*u_e
+        farr[7, lx, 1:ly] = farr[5,lx,1:ly] + (1./2.)*(farr[2,lx,1:ly]-farr[4,lx,1:ly]) - (1./6.)*rho_e*u_e 
+        farr[6, lx, 1:ly] = farr[8,lx,1:ly] - (1./2.)*(farr[2,lx,1:ly]-farr[4,lx,1:ly]) - (1./6.)*rho_e*u_e
+
+        # ENABLE THIS AND DISABLE THE OTHER OUTLET BOUNDARY CONDTION FOR THIS TO WORK
+        # # OUTLET: open boundary condition, init_hydro and update_hydro need to be changed
+        # rho_outlet = 1.
+        # u_x_outlet = -1. + (farr[0, lx, 1:ly]+farr[2, lx, 1:ly]+farr[4, lx, 1:ly]+
+        #     2.*(farr[1, lx, 1:ly]+farr[5, lx, 1:ly]+farr[8, lx, 1:ly]))/rho_outlet
+
+        # farr[3, lx, 1:ly] = farr[1, lx, 1:ly] - (2./3.)*rho_outlet*u_x_outlet
+        # farr[7, lx, 1:ly] = farr[5, lx, 1:ly] + (1./2.)*(farr[2, lx, 1:ly]-farr[4, lx, 1:ly])-(1./6.)*rho_outlet*u_x_outlet
+        # farr[6, lx, 1:ly] = farr[8, lx, 1:ly] - (1./2.)*(farr[2, lx, 1:ly]-farr[4, lx, 1:ly])-(1./6.)*rho_outlet*u_x_outlet
         
-        
-        for ii in range(1,ly):
-            # INLET: imposed velocity of u_w in the x direction and 0 in the y direction           
-            rho_w[ii] = (1./(1.-u_w))*(farr[0,0,ii]+farr[2,0,ii]+farr[4,0,ii]+2.*(farr[3,0,ii]+farr[6,0,ii]+farr[7,0,ii]))
+        f = self.f
 
-            farr[1, 0, ii] = farr[3,0,ii] + (2./3.)*rho_w[ii]*u_w
-            farr[5, 0, ii] = farr[7,0,ii] - (1./2.)*(farr[2,0,ii]-farr[4,0,ii]) + (1./6.)*rho_w[ii]*u_w 
-            farr[8, 0, ii] = farr[6,0,ii] + (1./2.)*(farr[2,0,ii]-farr[4,0,ii]) + (1./6.)*rho_w[ii]*u_w
-                 
-            # OUTLET: imposed velocity of u_w in the x direction and 0 in the y direction
-            rho_e[ii] = (1./(1.+u_e))*(farr[0,lx,ii]+farr[2,lx,ii]+farr[4,lx,ii]+2.*(farr[1,lx,ii]+farr[5,lx,ii]+farr[8,lx,ii]))
-
-            farr[3, lx, ii] = farr[1,lx,ii] - (2./3.)*rho_e[ii]*u_e
-            farr[7, lx, ii] = farr[5,lx,ii] + (1./2.)*(farr[2,lx,ii]-farr[4,lx,ii]) - (1./6.)*rho_e[ii]*u_e 
-            farr[6, lx, ii] = farr[8,lx,ii] - (1./2.)*(farr[2,lx,ii]-farr[4,lx,ii]) - (1./6.)*rho_e[ii]*u_e
-
-        for ii in range(0,lx+1):
-            # NORTH periodic
-            # update the values of f at the top with those from the bottom
-            f[4,ii,ly] = f[4,ii,0]
-            f[8,ii,ly] = f[8,ii,0]
-            f[7,ii,ly] = f[7,ii,0]
-            # SOUTH periodic
-            #update the values of f at the bottom with those from the top
-            f[2,ii,0] = f[2,ii,ly]
-            f[6,ii,0] = f[6,ii,ly]
-            f[5,ii,0] = f[5,ii,ly] 
-
+        # NORTH periodic
+        # update the values of f at the top with those from the bottom
+        f[4,0:(lx+1),ly] = f[4,0:(lx+1),0]
+        f[8,0:(lx+1),ly] = f[8,0:(lx+1),0]
+        f[7,0:(lx+1),ly] = f[7,0:(lx+1),0]
+        # SOUTH periodic
+        #update the values of f at the bottom with those from the top
+        f[2,0:(lx+1),0] = f[2,0:(lx+1),ly]
+        f[6,0:(lx+1),0] = f[6,0:(lx+1),ly]
+        f[5,0:(lx+1),0] = f[5,0:(lx+1),ly] 
+    
     def init_hydro(self):
         nx = self.nx
         ny = self.ny
@@ -357,14 +414,14 @@ class Pipe_Flow_PeriodicBC_VelocityInlet(Pipe_Flow):
         u[lx, 1:ly] =u_e
         rho[lx, 1:ly] = (1./(1.+u_e))*(f[0,lx,1:ly]+f[2,lx,1:ly]+f[4,lx,1:ly]+2.*(f[1,lx,1:ly]+f[5,lx,1:ly]+f[8,lx,1:ly]))
 
+
 class Pipe_Flow_Obstacles(Pipe_Flow):
 
-    def __init__(self, *args, obstacle_mask=None, **kwargs):
-
+    def __init__(self, obstacle_mask=None, **kwargs):
         self.obstacle_mask = obstacle_mask
         self.obstacle_pixels = np.where(self.obstacle_mask)
 
-        super(Pipe_Flow_Obstacles, self).__init__(*args, **kwargs)
+        super(Pipe_Flow_Obstacles, self).__init__(**kwargs)
 
     def init_hydro(self):
         super(Pipe_Flow_Obstacles, self).init_hydro()
@@ -380,42 +437,38 @@ class Pipe_Flow_Obstacles(Pipe_Flow):
         Pipe_Flow.move_bcs(self)
 
         # Now bounceback on the obstacle
-        cdef long[:] x_list = self.obstacle_pixels[0]
-        cdef long[:] y_list = self.obstacle_pixels[1]
-        cdef int num_pixels = y_list.shape[0]
+        x_list = self.obstacle_pixels[0]
+        y_list = self.obstacle_pixels[1]
+        num_pixels = y_list.shape[0]
 
-        cdef float[:, :, :] f = self.f
+        f = self.f
 
-        cdef float old_f0, old_f1, old_f2, old_f3, old_f4, old_f5, old_f6, old_f7, old_f8
-        cdef int i
-        cdef long x, y
 
-        with nogil:
-            for i in range(num_pixels):
-                x = x_list[i]
-                y = y_list[i]
+        for i in range(num_pixels):
+            x = x_list[i]
+            y = y_list[i]
 
-                old_f0 = f[0, x, y]
-                old_f1 = f[1, x, y]
-                old_f2 = f[2, x, y]
-                old_f3 = f[3, x, y]
-                old_f4 = f[4, x, y]
-                old_f5 = f[5, x, y]
-                old_f6 = f[6, x, y]
-                old_f7 = f[7, x, y]
-                old_f8 = f[8, x, y]
+            old_f0 = f[0, x, y]
+            old_f1 = f[1, x, y]
+            old_f2 = f[2, x, y]
+            old_f3 = f[3, x, y]
+            old_f4 = f[4, x, y]
+            old_f5 = f[5, x, y]
+            old_f6 = f[6, x, y]
+            old_f7 = f[7, x, y]
+            old_f8 = f[8, x, y]
 
-                # Bounce back everywhere!
-                # left right
-                f[1, x, y] = old_f3
-                f[3, x, y] = old_f1
-                # up down
-                f[2, x, y] = old_f4
-                f[4, x, y] = old_f2
-                # up-right
-                f[5, x, y] = old_f7
-                f[7, x, y] = old_f5
+            # Bounce back everywhere!
+            # left right
+            f[1, x, y] = old_f3
+            f[3, x, y] = old_f1
+            # up down
+            f[2, x, y] = old_f4
+            f[4, x, y] = old_f2
+            # up-right
+            f[5, x, y] = old_f7
+            f[7, x, y] = old_f5
 
-                # up-left
-                f[6, x, y] = old_f8
-                f[8, x, y] = old_f6
+            # up-left
+            f[6, x, y] = old_f8
+            f[8, x, y] = old_f6
